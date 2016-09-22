@@ -1,5 +1,9 @@
 package com.timushev.sbt.updates
 
+import java.io.{FileWriter, StringReader, StringWriter}
+import javax.xml.transform.TransformerFactory
+import javax.xml.transform.stream.{StreamResult, StreamSource}
+
 import com.timushev.sbt.updates.versions.Version
 import sbt._
 import sbt.std.TaskStreams
@@ -8,6 +12,7 @@ import scala.collection.immutable.SortedSet
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
 import scala.concurrent.{Await, Future}
+import scala.xml.Elem
 
 object Reporter {
 
@@ -38,20 +43,24 @@ object Reporter {
       .filterNot(_._2.isEmpty)
   }
 
+  def extractDependencyUpdate(dependencyUpdates: Map[ModuleID, SortedSet[Version]]) = {
+    dependencyUpdates.map {
+      case (m, vs) =>
+        val c = Version(m.revision)
+        Seq(
+          Some(formatModule(m)),
+          Some(m.revision),
+          patchUpdate(c, vs).map(_.toString),
+          minorUpdate(c, vs).map(_.toString),
+          majorUpdate(c, vs).map(_.toString)
+        )
+    }.toSeq.sortBy(_.head)
+  }
+
   def gatherDependencyUpdates(dependencyUpdates: Map[ModuleID, SortedSet[Version]]): Seq[String] = {
     if (dependencyUpdates.isEmpty) Seq.empty
     else {
-      val table = dependencyUpdates.map {
-        case (m, vs) =>
-          val c = Version(m.revision)
-          Seq(
-            Some(formatModule(m)),
-            Some(m.revision),
-            patchUpdate(c, vs).map(_.toString),
-            minorUpdate(c, vs).map(_.toString),
-            majorUpdate(c, vs).map(_.toString)
-          )
-      }.toSeq.sortBy(_.head)
+      val table = extractDependencyUpdate(dependencyUpdates)
       val widths = table.transpose.map {
         c => c.foldLeft(0) {
           _ max _.map(_.length).getOrElse(0)
@@ -68,7 +77,7 @@ object Reporter {
     }
   }
 
-  def dependencyUpdatesReport(project: ModuleID, dependencyUpdates: Map[ModuleID, SortedSet[Version]]): String = {
+  def dependencyUpdatesReportTxt(project: ModuleID, dependencyUpdates: Map[ModuleID, SortedSet[Version]]): String = {
     val updates = gatherDependencyUpdates(dependencyUpdates)
     if (updates.isEmpty) "No dependency updates found for %s" format project.name
     else {
@@ -83,13 +92,61 @@ object Reporter {
     }
   }
 
+  def dependencyUpdatesReportXml(project: ModuleID, dependencyUpdates: Map[ModuleID, SortedSet[Version]]): Elem = {
+    //import scala.xml._
+
+    val updates = extractDependencyUpdate(dependencyUpdates)
+
+    <libraries>{
+      updates.map {
+        row => row match {
+          case Seq(module, version, patchUpdate, minorUpdate, majorUpdate) => {
+            <lib>
+              <name>{module.getOrElse()}</name>
+              <version>{ version.getOrElse("") }</version>
+              <patchUpdate>{ patchUpdate.getOrElse("") }</patchUpdate>
+              <minorUpdate>{ minorUpdate.getOrElse("") }</minorUpdate>
+              <majorUpdate>{ majorUpdate.getOrElse("") }</majorUpdate>
+            </lib>
+          }
+        }
+      }
+    }
+    </libraries>
+  }
+
   def displayDependencyUpdates(project: ModuleID, dependencyUpdates: Map[ModuleID, SortedSet[Version]], failBuild: Boolean, out: TaskStreams[_]): Unit = {
-    out.log.info(dependencyUpdatesReport(project, dependencyUpdates))
+    out.log.info(dependencyUpdatesReportTxt(project, dependencyUpdates))
     if (failBuild && dependencyUpdates.nonEmpty) sys.error("Dependency updates found")
   }
 
   def writeDependencyUpdatesReport(project: ModuleID, dependencyUpdates: Map[ModuleID, SortedSet[Version]], file: File, out: TaskStreams[_]): File = {
-    IO.write(file, dependencyUpdatesReport(project, dependencyUpdates) + "\n")
+    IO.write(file, dependencyUpdatesReportTxt(project, dependencyUpdates) + "\n")
+    out.log.info("Dependency update report written to %s" format file)
+    file
+  }
+
+  def writeDependencyUpdatesReportHtml(project: ModuleID, dependencyUpdates: Map[ModuleID, SortedSet[Version]], file: File, out: TaskStreams[_]): File = {
+    val report = dependencyUpdatesReportXml(project, dependencyUpdates)
+
+    val str = new StringWriter
+    scala.xml.XML.write(str, report, "UTF-8", true, null)
+
+    val factory = TransformerFactory.newInstance();
+    val transformer = factory.newTransformer(new StreamSource(getClass.getClassLoader.getResourceAsStream("report.xsl")))
+    transformer.transform(new StreamSource(new StringReader(str.getBuffer.toString)), new StreamResult(file))
+
+    out.log.info("Dependency update report written to %s" format file)
+    file
+  }
+
+  def writeDependencyUpdatesReportXml(project: ModuleID, dependencyUpdates: Map[ModuleID, SortedSet[Version]], file: File, out: TaskStreams[_]): File = {
+    val report = dependencyUpdatesReportXml(project, dependencyUpdates)
+
+    val str = new StringWriter
+    scala.xml.XML.write(str, report, "UTF-8", true, null)
+    IO.write(file, str.getBuffer.toString)
+
     out.log.info("Dependency update report written to %s" format file)
     file
   }

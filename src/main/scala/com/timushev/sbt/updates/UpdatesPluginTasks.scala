@@ -17,4 +17,11 @@ trait UpdatesPluginTasks {
     (projectID, dependencyUpdatesData, dependencyUpdatesReportFile, streams)
       .map(Reporter.writeDependencyUpdatesReport)
 
+  def writeDependencyUpdatesReportXmlTask =
+    (projectID, dependencyUpdatesData, dependencyUpdatesXmlReportFile, streams)
+      .map(Reporter.writeDependencyUpdatesReportXml)
+
+  def writeDependencyUpdatesReportHtmlTask =
+    (projectID, dependencyUpdatesData, dependencyUpdatesHtmlReportFile, streams)
+      .map(Reporter.writeDependencyUpdatesReportHtml)
 }

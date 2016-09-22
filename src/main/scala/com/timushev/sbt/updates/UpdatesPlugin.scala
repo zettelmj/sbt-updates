@@ -12,12 +12,16 @@ object UpdatesPlugin extends AutoPlugin with UpdatesPluginTasks {
 
   override val projectSettings = Seq(
     dependencyUpdatesReportFile := target.value / "dependency-updates.txt",
+    dependencyUpdatesXmlReportFile := target.value / "dependency-updates.xml",
+    dependencyUpdatesHtmlReportFile := target.value / "dependency-updates.html",
     dependencyUpdatesExclusions := DependencyFilter.fnToModuleFilter(_ => false),
     dependencyUpdatesFailBuild := false,
     dependencyAllowPreRelease := false,
     dependencyUpdatesData <<= dependencyUpdatesDataTask,
     dependencyUpdates <<= dependencyUpdatesTask,
-    dependencyUpdatesReport <<= writeDependencyUpdatesReportTask
+    dependencyUpdatesReport <<= writeDependencyUpdatesReportTask,
+    dependencyUpdatesReportXml <<= writeDependencyUpdatesReportXmlTask,
+    dependencyUpdatesReportHtml <<= writeDependencyUpdatesReportHtmlTask
   )
 
 }
